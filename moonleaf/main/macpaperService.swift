@@ -348,6 +348,58 @@ class macpaperService: NSObject, ObservableObject {
         )
     }
 
+    /// Restores wallpapers after the display layout changed.
+    ///
+    /// A screen that was just plugged in comes online with desktops that have no
+    /// picture of their own, and those fall back to the system default until
+    /// something decorates them: under the per-desktop rotation they are filled
+    /// from the library, otherwise they are handed the picture the other
+    /// desktops already show.
+    static func restoreWallpapersAfterDisplayChange() {
+        // A screen settling in reports the change several times, and every pass
+        // reads and writes the same store, so they are run one after another.
+        displayChangeQueue.async {
+            let spaces = SpaceWallpapers.liveSpaces()
+            guard !spaces.isEmpty else { return }
+
+            let current = SpaceWallpapers.currentAssignments()
+            let missing = spaces.filter { current[$0.uuid] == nil }
+            guard !missing.isEmpty else { return }
+
+            guard UserDefaults.standard.bool(forKey: perSpaceShuffleKey) else {
+                guard let path = UserDefaults.standard.string(forKey: lastShuffleKey) ?? current.values.sorted().first,
+                      FileManager.default.fileExists(atPath: path) else { return }
+                DispatchQueue.main.async { rotationService.set_wp_path(path) }
+                return
+            }
+
+            let stills = library_candidates().filter {
+                ["jpg", "jpeg", "png"].contains(($0.path as NSString).pathExtension.lowercased())
+            }
+            guard !stills.isEmpty else { return }
+
+            var claimed = Set(current.values)
+            var assignment: [SpaceWallpapers.Space: String] = [:]
+            for space in missing {
+                let unclaimed = stills.filter { !claimed.contains($0.path) }
+                guard let pick = (unclaimed.isEmpty ? stills : unclaimed).randomElement() else { continue }
+                claimed.insert(pick.path)
+                assignment[space] = pick.path
+            }
+            guard !assignment.isEmpty, SpaceWallpapers.assign(assignment) else { return }
+            SpaceWallpapers.reload()
+        }
+    }
+
+    private static let displayChangeQueue = DispatchQueue(label: "com.naomisphere.moonleaf.displayChange")
+
+    /// Applies an already chosen picture, without going through the wallpaper
+    /// picker's per-desktop pinning.
+    func set_wp_path(_ path: String) {
+        _exec_wallpaper(["set", path]) { _ in }
+        postOverlayNotification(path: path)
+    }
+
     static func load_settings_json() -> [String: String] {
         guard let data = try? Data(contentsOf: settings_file),
               let settings = try? JSONDecoder().decode([String: String].self, from: data) else {

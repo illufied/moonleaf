@@ -49,6 +49,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         service.launchGlasswpDaemon()
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(displaysDidChange),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+    }
+
+    /// A screen can be plugged in at any moment, and the desktops it brings
+    /// have no picture of their own until something decorates them: without
+    /// this they stay on the system default.
+    @objc private func displaysDidChange() {
+        service.refreshScreenCount()
+        macpaperService.restoreWallpapersAfterDisplayChange()
     }
 
     /* doing this would kill the actual wallpaper too
