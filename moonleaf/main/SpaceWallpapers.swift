@@ -13,8 +13,7 @@ import Foundation
 /// so the desktops you are not looking at cannot be decorated through AppKit.
 /// Their wallpapers live in the system wallpaper store
 /// (`~/Library/Application Support/com.apple.wallpaper/Store/Index.plist`);
-/// that store is what this type reads and writes, and the visible desktop is
-/// then refreshed through the bundled `wallpaper` helper.
+/// that store is what this type reads and writes.
 enum SpaceWallpapers {
     /// One desktop: `displayUUID` is the screen it belongs to, `uuid` is the
     /// Space identifier. The first desktop of a screen uses an empty string.
