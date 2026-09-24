@@ -418,6 +418,15 @@ struct SettingsView: View {
                     )
 
                     if service.shuffleEnabled {
+                        SToggle(
+                            title: NSLocalizedString("settings_per_desktop_shuffle", comment: "Different wallpaper on every desktop"),
+                            description: NSLocalizedString("settings_per_desktop_shuffle_desc", comment: ""),
+                            isOn: Binding(
+                                get: { service.perSpaceShuffle },
+                                set: { service.setPerSpaceShuffle($0) }
+                            )
+                        )
+
                         HStack {
                             Text(NSLocalizedString("settings_shuffle_interval", comment: "Change every"))
                                 .font(Font(font_loader.regular(size: 13)))

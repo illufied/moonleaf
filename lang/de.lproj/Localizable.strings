@@ -124,6 +124,8 @@
 
 "settings_shuffle" = "Hintergrundbilder mischen";
 "settings_shuffle_desc" = "Automatisch durch die Bibliothek wechseln";
+"settings_per_desktop_shuffle" = "Anderes Hintergrundbild pro Schreibtisch";
+"settings_per_desktop_shuffle_desc" = "Jeder Schreibtisch bekommt ein eigenes Bild, die Bibliothek rotiert ohne Wiederholungen";
 "settings_shuffle_interval" = "Wechseln alle";
 "shuffle_interval_15min" = "15 Minuten";
 "shuffle_interval_1hr" = "1 Stunde";

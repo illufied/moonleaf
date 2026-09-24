@@ -123,6 +123,8 @@
 
 "settings_shuffle" = "Mezclar fondos";
 "settings_shuffle_desc" = "Rotar automáticamente por tu biblioteca de fondos";
+"settings_per_desktop_shuffle" = "Fondo distinto en cada escritorio";
+"settings_per_desktop_shuffle_desc" = "Cada escritorio recibe su propio fondo y la biblioteca rota entre ellos sin repetir";
 "settings_shuffle_interval" = "Cambiar cada";
 "shuffle_interval_15min" = "15 minutos";
 "shuffle_interval_1hr" = "1 hora";
