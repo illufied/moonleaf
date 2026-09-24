@@ -15,6 +15,7 @@ struct BrowseView: View {
     @State private var searchQuery = ""
     @State private var chosen_sorting: WHSort = .date_added
     @State private var chosen_order: WHOrder = .desc
+    @State private var chosen_topRange: WHTopRange = .week
     @State private var chosen_purity: WHPurityStatus = .sfw
     @State private var chosen_categ: WHCategory = .all
     @State private var chosen_prov: Set<WallpaperProvider> = [.wallhaven]
@@ -289,11 +290,24 @@ struct BrowseView: View {
                 }
                 .pickerStyle(MenuPickerStyle())
                 
-                Picker("", selection: $chosen_order) {
-                    Text(NSLocalizedString("browse_desc", comment: "Descending")).tag(WHOrder.desc)
-                    Text(NSLocalizedString("browse_asc", comment: "Ascending")).tag(WHOrder.asc)
+                if chosen_sorting == .toplist {
+                    Text(NSLocalizedString("browse_top_range", comment: "Time Range"))
+                        .font(Font(font_loader.regular(size: 12)))
+                        .foregroundColor(.secondary)
+                    
+                    Picker("", selection: $chosen_topRange) {
+                        ForEach(WHTopRange.allCases, id: \.self) { range in
+                            Text(range.displayName).tag(range)
+                        }
+                    }
+                    .pickerStyle(SegmentedPickerStyle())
+                } else {
+                    Picker("", selection: $chosen_order) {
+                        Text(NSLocalizedString("browse_desc", comment: "Descending")).tag(WHOrder.desc)
+                        Text(NSLocalizedString("browse_asc", comment: "Ascending")).tag(WHOrder.asc)
+                    }
+                    .pickerStyle(SegmentedPickerStyle())
                 }
-                .pickerStyle(SegmentedPickerStyle())
             }
             
             Button(action: {
@@ -400,6 +414,7 @@ struct BrowseView: View {
                 order: chosen_order,
                 purity: chosen_purity,
                 category: chosen_categ,
+                topRange: chosen_topRange,
                 page: currentPage
             ) {
                 group.leave()
@@ -439,6 +454,7 @@ struct BrowseView: View {
                 order: chosen_order,
                 purity: chosen_purity,
                 category: chosen_categ,
+                topRange: chosen_topRange,
                 page: currentPage
             )
         }
@@ -831,8 +847,55 @@ class WHService: ObservableObject {
         order: WHOrder = .desc,
         purity: WHPurityStatus = .sfw,
         category: WHCategory = .all,
+        topRange: WHTopRange = .month,
         page: Int = 1,
         completion: (() -> Void)? = nil
+    ) {
+        fetch(
+            query: query,
+            sorting: sorting,
+            order: order,
+            purity: purity,
+            category: category,
+            topRange: topRange,
+            page: page,
+            append: false,
+            completion: completion
+        )
+    }
+    
+    func loadMoreWallpapers(
+        query: String? = nil,
+        sorting: WHSort = .date_added,
+        order: WHOrder = .desc,
+        purity: WHPurityStatus = .sfw,
+        category: WHCategory = .all,
+        topRange: WHTopRange = .month,
+        page: Int
+    ) {
+        fetch(
+            query: query,
+            sorting: sorting,
+            order: order,
+            purity: purity,
+            category: category,
+            topRange: topRange,
+            page: page,
+            append: true,
+            completion: nil
+        )
+    }
+    
+    private func fetch(
+        query: String?,
+        sorting: WHSort,
+        order: WHOrder,
+        purity: WHPurityStatus,
+        category: WHCategory,
+        topRange: WHTopRange,
+        page: Int,
+        append: Bool,
+        completion: (() -> Void)?
     ) {
         var components = URLComponents(string: baseURL)!
         var queryItems: [URLQueryItem] = []
@@ -847,13 +910,21 @@ class WHService: ObservableObject {
         queryItems.append(URLQueryItem(name: "categories", value: category.rawValue))
         queryItems.append(URLQueryItem(name: "page", value: "\(page)"))
         
+        // wallhaven only honours topRange on the toplist listing
+        if sorting == .toplist {
+            queryItems.append(URLQueryItem(name: "topRange", value: topRange.rawValue))
+        }
+        
         if sorting == .random, let seed = currentSeed {
             queryItems.append(URLQueryItem(name: "seed", value: seed))
         }
         
         components.queryItems = queryItems
         
-        guard let url = components.url else { return }
+        guard let url = components.url else {
+            completion?()
+            return
+        }
         
         var request = URLRequest(url: url)
         if !apiKey.isEmpty {
@@ -871,63 +942,13 @@ class WHService: ObservableObject {
             
             do {
                 let response = try JSONDecoder().decode(WHResponse.self, from: data)
+                let fetched = response.data.map { AnyWallpaper($0, provider: .wallhaven) }
                 DispatchQueue.main.async {
-                    self.wallpapers = response.data.map { AnyWallpaper($0, provider: .wallhaven) }
-                    if let seed = response.meta.seed {
-                        self.currentSeed = seed
+                    if append {
+                        self.wallpapers.append(contentsOf: fetched)
+                    } else {
+                        self.wallpapers = fetched
                     }
-                }
-            } catch {
-                print("while decoding response: \(error)")
-            }
-        }.resume()
-    }
-    
-    func loadMoreWallpapers(
-        query: String? = nil,
-        sorting: WHSort = .date_added,
-        order: WHOrder = .desc,
-        purity: WHPurityStatus = .sfw,
-        category: WHCategory = .all,
-        page: Int
-    ) {
-        var components = URLComponents(string: baseURL)!
-        var queryItems: [URLQueryItem] = []
-        
-        if let query = query, !query.isEmpty {
-            queryItems.append(URLQueryItem(name: "q", value: query))
-        }
-        
-        queryItems.append(URLQueryItem(name: "sorting", value: sorting.rawValue))
-        queryItems.append(URLQueryItem(name: "order", value: order.rawValue))
-        queryItems.append(URLQueryItem(name: "purity", value: purity.rawValue))
-        queryItems.append(URLQueryItem(name: "categories", value: category.rawValue))
-        queryItems.append(URLQueryItem(name: "page", value: "\(page)"))
-        
-        if sorting == .random, let seed = currentSeed {
-            queryItems.append(URLQueryItem(name: "seed", value: seed))
-        }
-        
-        components.queryItems = queryItems
-        
-        guard let url = components.url else { return }
-        
-        var request = URLRequest(url: url)
-        if !apiKey.isEmpty {
-            request.addValue(apiKey, forHTTPHeaderField: "X-API-Key")
-        }
-        
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            if let _ = error {
-                return
-            }
-            
-            guard let data = data else { return }
-            
-            do {
-                let response = try JSONDecoder().decode(WHResponse.self, from: data)
-                DispatchQueue.main.async {
-                    self.wallpapers.append(contentsOf: response.data.map { AnyWallpaper($0, provider: .wallhaven) })
                     if let seed = response.meta.seed {
                         self.currentSeed = seed
                     }
@@ -1165,6 +1186,19 @@ enum WHSort: String, CaseIterable {
 enum WHOrder: String {
     case desc = "desc"
     case asc = "asc"
+}
+
+enum WHTopRange: String, CaseIterable {
+    case day = "1d"
+    case threeDays = "3d"
+    case week = "1w"
+    case month = "1M"
+    case threeMonths = "3M"
+    case sixMonths = "6M"
+    case year = "1y"
+    
+    // same short tokens wallhaven uses in its own toplist range selector
+    var displayName: String { rawValue.uppercased() }
 }
 
 enum WHPurityStatus: String, CaseIterable {

@@ -48,6 +48,7 @@
 "browse_category" = "Category";
 "browse_purity" = "Purity";
 "browse_sort" = "Sort by";
+"browse_top_range" = "Time Range";
 "browse_desc" = "Descending";
 "browse_asc" = "Ascending";
 "browse_apply" = "Apply Filters";

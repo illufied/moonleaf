@@ -48,6 +48,7 @@
 "browse_category" = "Kategoria";
 "browse_purity" = "Przyzwoitość";
 "browse_sort" = "Sortuj według";
+"browse_top_range" = "Zakres czasu";
 "browse_desc" = "Malejąco";
 "browse_asc" = "Rosnąco";
 "browse_apply" = "Zastosuj Filtry";
