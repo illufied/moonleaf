@@ -146,6 +146,26 @@ final class ScreenPlayer {
         }
     }
 
+    /// Stops drawing on this screen and leaves the window transparent, so the
+    /// desktop picture the system keeps per desktop stays visible. The last
+    /// file is remembered in `currentFilePath` for when drawing resumes.
+    func clear() {
+        if let obs = loopObserver {
+            NotificationCenter.default.removeObserver(obs)
+            loopObserver = nil
+        }
+        playerStatusObserver?.invalidate()
+        playerStatusObserver = nil
+        mp?.pause()
+        mp = nil
+        playerItem = nil
+        currentLayer?.removeFromSuperlayer()
+        currentLayer = nil
+        vizView?.removeFromSuperview()
+        vizView = nil
+        vizEngine = nil
+    }
+
     func updateVolume(_ vol: Float) {
         mp?.volume = vol
     }
@@ -395,6 +415,13 @@ class GlasswpApp: NSObject, NSApplicationDelegate {
     var entryFilePath: String = ""
     var isDaemon: Bool = false
 
+    /// While this is on, the desktop pictures are owned by the per-desktop
+    /// rotation: this overlay spans every desktop, so anything it draws would
+    /// hide them. Read once at start-up so a daemon that outlives the app
+    /// still agrees with the setting.
+    private var perDesktopMode: Bool = UserDefaults(suiteName: "com.naomisphere.macpaper")?
+        .bool(forKey: "moonleaf_perSpaceShuffle") ?? false
+
     
     var vizMode: String      = "disabled"
     var vizColorMode: String = "rainbow"
@@ -415,7 +442,7 @@ class GlasswpApp: NSObject, NSApplicationDelegate {
         if isDaemon {
             
             
-        } else if !entryFilePath.isEmpty && FileManager.default.fileExists(atPath: entryFilePath) {
+        } else if !perDesktopMode && !entryFilePath.isEmpty && FileManager.default.fileExists(atPath: entryFilePath) {
             for player in screenPlayers {
                 player.play(filePath: entryFilePath, fade: false)
             }
@@ -427,6 +454,20 @@ class GlasswpApp: NSObject, NSApplicationDelegate {
         }
         
         registerNotifications()
+    }
+
+    /// Point every screen at either the overlay picture or the system desktop
+    /// pictures, depending on the per-desktop setting.
+    private func applyDrawingMode() {
+        if perDesktopMode {
+            for p in screenPlayers { p.clear() }
+            return
+        }
+        for p in screenPlayers {
+            let path = p.currentFilePath.isEmpty ? entryFilePath : p.currentFilePath
+            guard !path.isEmpty else { continue }
+            p.play(filePath: path, fade: false)
+        }
     }
 
     
@@ -473,6 +514,9 @@ class GlasswpApp: NSObject, NSApplicationDelegate {
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(handleChangeWallpaper(_:)),
             name: Notification.Name("com.naomisphere.moonleaf.changeWallpaper"), object: nil)
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(handlePerDesktopMode(_:)),
+            name: Notification.Name("com.naomisphere.moonleaf.perDesktopMode"), object: nil)
 
         
         NotificationCenter.default.addObserver(
@@ -494,8 +538,8 @@ class GlasswpApp: NSObject, NSApplicationDelegate {
             guard let self = self else { return }
             for p in self.screenPlayers {
                 self.applyCurrentSettings(to: p)
-                p.play(filePath: p.currentFilePath.isEmpty ? self.entryFilePath : p.currentFilePath, fade: false)
             }
+            self.applyDrawingMode()
         }
     }
 
@@ -515,6 +559,16 @@ class GlasswpApp: NSObject, NSApplicationDelegate {
         let screenIndex = notification.userInfo?["screenIndex"] as? Int
 
         DispatchQueue.main.async {
+            if self.perDesktopMode {
+                
+                self.entryFilePath = path
+                if let idx = screenIndex, idx >= 0, idx < self.screenPlayers.count {
+                    self.screenPlayers[idx].currentFilePath = path
+                } else {
+                    for p in self.screenPlayers { p.currentFilePath = path }
+                }
+                return
+            }
             if let idx = screenIndex {
                 guard idx >= 0 && idx < self.screenPlayers.count else { return }
                 self.screenPlayers[idx].play(filePath: path, fade: true)
@@ -525,6 +579,15 @@ class GlasswpApp: NSObject, NSApplicationDelegate {
                 }
                 self.entryFilePath = path
             }
+        }
+    }
+
+    @objc private func handlePerDesktopMode(_ notification: Notification) {
+        guard let enabled = notification.userInfo?["enabled"] as? Bool else { return }
+        DispatchQueue.main.async {
+            guard self.perDesktopMode != enabled else { return }
+            self.perDesktopMode = enabled
+            self.applyDrawingMode()
         }
     }
     @objc private func handleScreenParameterChange() {
@@ -549,7 +612,9 @@ class GlasswpApp: NSObject, NSApplicationDelegate {
                     let p = self.makePlayer(for: screen)
                     
                     let path = self.entryFilePath.isEmpty ? keepPlayers.first?.currentFilePath ?? "" : self.entryFilePath
-                    p.play(filePath: path, fade: false)
+                    if !self.perDesktopMode && !path.isEmpty {
+                        p.play(filePath: path, fade: false)
+                    }
                     keepPlayers.append(p)
                 }
             }
