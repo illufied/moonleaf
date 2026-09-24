@@ -97,26 +97,48 @@ enum SpaceWallpapers {
     static func assign(_ wallpapers: [Space: String]) -> Bool {
         guard !wallpapers.isEmpty, var store = readStore() else { return false }
 
+        let idle = idleTemplate(in: store)
         var spaces = store["Spaces"] as? [String: Any] ?? [:]
         let now = Date()
         for (space, path) in wallpapers {
             var entry = spaces[space.uuid] as? [String: Any] ?? [:]
-            entry["Default"] = desktopEntry(entry["Default"], path: path, now: now)
+            entry["Default"] = desktopEntry(entry["Default"], path: path, now: now, idle: idle)
             var displays = entry["Displays"] as? [String: Any] ?? [:]
-            displays[space.displayUUID] = desktopEntry(displays[space.displayUUID], path: path, now: now)
+            displays[space.displayUUID] = desktopEntry(displays[space.displayUUID], path: path, now: now, idle: idle)
             entry["Displays"] = displays
             spaces[space.uuid] = entry
         }
         store["Spaces"] = spaces
 
-        guard let data = try? PropertyListSerialization.data(
-            fromPropertyList: store, format: .binary, options: 0) else { return false }
-        return (try? data.write(to: storeURL, options: .atomic)) != nil
+        // The per-display section is what a screen that is plugged in again
+        // reads before its desktops exist, so the display keeps the picture it
+        // had instead of falling back to the system default.
+        var displays = store["Displays"] as? [String: Any] ?? [:]
+        for displayUUID in Set(wallpapers.keys.map { $0.displayUUID }) {
+            let onDisplay = wallpapers
+                .filter { $0.key.displayUUID == displayUUID }
+                .sorted { $0.key.uuid < $1.key.uuid }
+            guard let path = (onDisplay.first { $0.key.isCurrent } ?? onDisplay.first)?.value else { continue }
+            displays[displayUUID] = desktopEntry(displays[displayUUID], path: path, now: now, idle: idle)
+        }
+        store["Displays"] = displays
+
+        return write(store)
     }
 
-    private static func desktopEntry(_ existing: Any?, path: String, now: Date) -> [String: Any] {
+    /// A desktop entry as macOS 26 stores it: the desktop picture plus the
+    /// picture shown when the system goes idle. WallpaperAgent rejects the whole
+    /// store when either is missing, so a fresh entry copies the idle picture
+    /// that is already configured elsewhere.
+    private static func desktopEntry(_ existing: Any?, path: String, now: Date, idle: [String: Any]) -> [String: Any] {
         var entry = existing as? [String: Any] ?? [:]
-        entry["Type"] = entry["Type"] ?? "individual"
+        entry["Type"] = "individual"
+        // A desktop the store used to share between all screens keeps a linked
+        // block behind; it would point at a picture this entry no longer uses.
+        entry.removeValue(forKey: "Linked")
+        if entry["Idle"] == nil {
+            entry["Idle"] = idle
+        }
 
         var desktop = entry["Desktop"] as? [String: Any] ?? [:]
         var content = desktop["Content"] as? [String: Any] ?? [:]
@@ -127,11 +149,54 @@ enum SpaceWallpapers {
             "Files": [String](),
             "Configuration": configuration(for: path),
         ]]
+        content["EncodedOptionValues"] = content["EncodedOptionValues"] ?? "$null"
+        content["Shuffle"] = content["Shuffle"] ?? "$null"
         desktop["Content"] = content
         desktop["LastSet"] = now
         desktop["LastUse"] = now
         entry["Desktop"] = desktop
         return entry
+    }
+
+    /// The idle picture any entry in the store already carries, or the plain
+    /// system default when the store has none yet.
+    private static func idleTemplate(in store: [String: Any]) -> [String: Any] {
+        for key in ["SystemDefault", "AllSpacesAndDisplays"] {
+            if let idle = (store[key] as? [String: Any])?["Idle"] as? [String: Any] {
+                return idle
+            }
+        }
+        for entry in (store["Spaces"] as? [String: Any] ?? [:]).values {
+            let entry = entry as? [String: Any] ?? [:]
+            if let idle = (entry["Default"] as? [String: Any])?["Idle"] as? [String: Any] {
+                return idle
+            }
+            for display in (entry["Displays"] as? [String: Any] ?? [:]).values {
+                if let idle = (display as? [String: Any])?["Idle"] as? [String: Any] {
+                    return idle
+                }
+            }
+        }
+        let now = Date()
+        return [
+            "Content": [
+                "Choices": [[
+                    "Provider": "default",
+                    "Files": [String](),
+                    "Configuration": Data(),
+                ]],
+                "EncodedOptionValues": "$null",
+                "Shuffle": "$null",
+            ],
+            "LastSet": now,
+            "LastUse": now,
+        ]
+    }
+
+    private static func write(_ store: [String: Any]) -> Bool {
+        guard let data = try? PropertyListSerialization.data(
+            fromPropertyList: store, format: .binary, options: 0) else { return false }
+        return (try? data.write(to: storeURL, options: .atomic)) != nil
     }
 
     private static func configuration(for path: String) -> Data {
