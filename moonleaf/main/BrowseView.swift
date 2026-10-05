@@ -847,7 +847,7 @@ class WHService: ObservableObject {
         order: WHOrder = .desc,
         purity: WHPurityStatus = .sfw,
         category: WHCategory = .all,
-        topRange: WHTopRange = .month,
+        topRange: WHTopRange = .week,
         page: Int = 1,
         completion: (() -> Void)? = nil
     ) {
@@ -870,7 +870,7 @@ class WHService: ObservableObject {
         order: WHOrder = .desc,
         purity: WHPurityStatus = .sfw,
         category: WHCategory = .all,
-        topRange: WHTopRange = .month,
+        topRange: WHTopRange = .week,
         page: Int
     ) {
         fetch(
