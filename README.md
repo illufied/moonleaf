@@ -1,3 +1,5 @@
+### Disclaimer: This project is mostly AI coded. I made it a while ago, and I am not interested in producing it now, as I don't want to do with this "slop machine" code. At the same time, it definitely has quite a few flaws. I have no real interest in updating it, and you are invited to make a fork/derivative of it and shape it to your own as you may - that's what FOSS is for after all.
+
 <h1 align="center">
   <br>
   <a href="https://github.com/parkuoa/moonleaf"><img src="./artwork/png/moonleaf2.png" alt="moonleaf" width="150"></a>
