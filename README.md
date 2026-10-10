@@ -66,9 +66,6 @@ xattr -dr com.apple.quarantine /Applications/moonleaf.app
 </p>
 
 ---
-
-### Disclaimer: I consider this project mostly AI coded slop which I am not interested in producing. I have no high interest in updating it, though I will attempt to continue to do so, but mostly expect bug fixes and alike. Feel free to contribute.
-
 ## License
 moonleaf is licensed under the [MIT License](./LICENSE). \
 Versions pre-v3.0 (macpaper) are licensed under the GNU General Public License v3.0 (GPLv3). 
@@ -102,6 +99,3 @@ xattr -dr com.apple.quarantine /Applications/moonleaf.app
 ### Apple could not verify "moonleaf" is free of malware...
 You can fix this by doing the same steps as [here](https://github.com/parkuoa/moonleaf/tree/main/README.md#installation).
 
-## ❤️ Support me
-☕ If you like my work and want to support me, you can do so via Ko-fi:\
-https://ko-fi.com/parkuoa
