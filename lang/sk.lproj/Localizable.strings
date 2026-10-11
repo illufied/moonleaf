@@ -48,6 +48,7 @@
 "browse_category" = "Kategória";
 "browse_purity" = "Vhodnosť obsahu";
 "browse_sort" = "Zoradiť podľa";
+"browse_top_range" = "Časový rozsah";
 "browse_desc" = "Zostupne";
 "browse_asc" = "Vzostupne";
 "browse_apply" = "Použiť filtre";

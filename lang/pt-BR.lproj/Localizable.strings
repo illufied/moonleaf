@@ -48,6 +48,7 @@
 "browse_category" = "Categoria";
 "browse_purity" = "Pureza";
 "browse_sort" = "Ordenar por";
+"browse_top_range" = "Período";
 "browse_desc" = "Decrescente";
 "browse_asc" = "Crescente";
 "browse_apply" = "Aplicar Filtros";
