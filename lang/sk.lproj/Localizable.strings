@@ -124,6 +124,8 @@
 
 "settings_shuffle" = "Náhodne striedať tapety";
 "settings_shuffle_desc" = "Automaticky striedať tapety z vašej knižnice";
+"settings_per_desktop_shuffle" = "Iná tapeta na každej ploche";
+"settings_per_desktop_shuffle_desc" = "Každá plocha dostane vlastnú tapetu a knižnica sa medzi nimi strieda bez opakovania";
 "settings_shuffle_interval" = "Meniť každých";
 "shuffle_interval_15min" = "15 minút";
 "shuffle_interval_1hr" = "1 hodinu";

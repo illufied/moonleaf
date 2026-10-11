@@ -124,6 +124,8 @@
 
 "settings_shuffle" = "Shuffle Wallpapers";
 "settings_shuffle_desc" = "Automatically rotate through your wallpaper library";
+"settings_per_desktop_shuffle" = "Different Wallpaper on Every Desktop";
+"settings_per_desktop_shuffle_desc" = "Give each desktop its own wallpaper and rotate the library through them without repeats";
 "settings_shuffle_interval" = "Change every";
 "shuffle_interval_15min" = "15 minutes";
 "shuffle_interval_1hr" = "1 hour";

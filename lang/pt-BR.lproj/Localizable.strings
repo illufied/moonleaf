@@ -124,6 +124,8 @@
 
 "settings_shuffle" = "Embaralhar papéis de parede";
 "settings_shuffle_desc" = "Alternar automaticamente pela biblioteca de papéis de parede";
+"settings_per_desktop_shuffle" = "Papel de parede diferente em cada desktop";
+"settings_per_desktop_shuffle_desc" = "Cada desktop recebe seu próprio papel de parede e a biblioteca alterna entre eles sem repetir";
 "settings_shuffle_interval" = "Alterar a cada";
 "shuffle_interval_15min" = "15 minutos";
 "shuffle_interval_1hr" = "1 hora";

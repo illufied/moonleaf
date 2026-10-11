@@ -23,6 +23,7 @@ class macpaperService: NSObject, ObservableObject {
     @Published var localSort: LocalSortMode = .date
     @Published var shuffleEnabled: Bool = false
     @Published var shuffleInterval: ShuffleInterval = .oneHour
+    @Published var perSpaceShuffle: Bool = false
     @Published var importMethod: ImportMethod = .link
     @Published var currentPath: URL?
     @Published var navStack: [URL] = []
@@ -109,8 +110,13 @@ class macpaperService: NSObject, ObservableObject {
     }
 
     public func launchGlasswpDaemon() {
-        
-        if checkIfGlasswpIsRunning() { return }
+        let perDesktop = UserDefaults.standard.bool(forKey: macpaperService.perSpaceShuffleKey)
+
+        if checkIfGlasswpIsRunning() {
+            
+            macpaperService.postPerDesktopMode(perDesktop)
+            return
+        }
         
         guard FileManager.default.fileExists(atPath: glasswp_path) else { return }
         
@@ -118,6 +124,7 @@ class macpaperService: NSObject, ObservableObject {
         task.launchPath = glasswp_path
         task.arguments = ["--daemon"]
         task.launch()
+        macpaperService.postPerDesktopMode(perDesktop)
     }
 
     func select_wp(_ wallpaper: endup_wp?) {
@@ -183,7 +190,34 @@ class macpaperService: NSObject, ObservableObject {
 
     private static let shuffleEnabledKey = "moonleaf_shuffleEnabled"
     private static let shuffleIntervalKey = "moonleaf_shuffleInterval"
+    private static let perSpaceShuffleKey = "moonleaf_perSpaceShuffle"
     private static let lastShuffleKey = "moonleaf_lastShuffle"
+
+    /// Turns the per-desktop rotation on or off. Switching it on applies it
+    /// right away, otherwise nothing would happen until the next interval.
+    func setPerSpaceShuffle(_ enabled: Bool) {
+        perSpaceShuffle = enabled
+        UserDefaults.standard.set(enabled, forKey: macpaperService.perSpaceShuffleKey)
+        macpaperService.postPerDesktopMode(enabled)
+        if enabled && shuffleEnabled {
+            macpaperService.rotateDesktops()
+        } else if !enabled, let path = current_wp ?? UserDefaults.standard.string(forKey: macpaperService.lastShuffleKey) {
+            // The overlay engine stopped drawing while the desktops had pictures
+            // of their own, so hand it the current wallpaper back right away.
+            postOverlayNotification(path: path)
+        }
+    }
+
+    /// The overlay engine keeps one picture for every desktop, so it has to
+    /// step aside while the desktops have pictures of their own.
+    static func postPerDesktopMode(_ enabled: Bool) {
+        DistributedNotificationCenter.default().postNotificationName(
+            Notification.Name("com.naomisphere.moonleaf.perDesktopMode"),
+            object: nil,
+            userInfo: ["enabled": enabled],
+            deliverImmediately: true
+        )
+    }
 
     /// Arms the rotation loop when the setting is on and no loop is running yet.
     ///
@@ -219,22 +253,33 @@ class macpaperService: NSObject, ObservableObject {
     private static let rotationService = macpaperService()
 
     private static func shuffleTick() {
-        guard let next = random_library_wallpaper() else { return }
+        let candidates = library_candidates()
+        guard !candidates.isEmpty else { return }
+
+        if UserDefaults.standard.bool(forKey: perSpaceShuffleKey) {
+            rotateDesktops(candidates)
+            return
+        }
+
+        guard let next = random_library_wallpaper(from: candidates) else { return }
         DispatchQueue.main.async {
             rotationService.set_wp(next)
         }
     }
 
-    /// Rotates inside the library root, honouring the Show Images/Videos
-    /// settings, skipping folders (they are not settable) and never returning
-    /// the file that was used for the previous rotation.
-    private static func random_library_wallpaper() -> endup_wp? {
+    /// Still images and videos in the library root that the Show Images/Videos
+    /// settings keep visible; folders are skipped, they are not settable.
+    private static func library_candidates() -> [endup_wp] {
         let settings = load_settings_json()
         let showImages = (settings["showImages"] ?? "true") == "true"
         let showVideos = (settings["showVideos"] ?? "true") == "true"
-        let candidates = scan_library(wp_storage_dir).filter {
+        return scan_library(wp_storage_dir).filter {
             !$0.isFolder && is_visible($0, showImages: showImages, showVideos: showVideos)
         }
+    }
+
+    /// Never returns the file that was used for the previous rotation.
+    private static func random_library_wallpaper(from candidates: [endup_wp]) -> endup_wp? {
         guard candidates.count > 1 else { return candidates.first }
 
         let previous = UserDefaults.standard.string(forKey: lastShuffleKey)
@@ -242,6 +287,53 @@ class macpaperService: NSObject, ObservableObject {
         guard let next = (pool.isEmpty ? candidates : pool).randomElement() else { return nil }
         UserDefaults.standard.set(next.path, forKey: lastShuffleKey)
         return next
+    }
+
+    /// Gives every desktop its own wallpaper.
+    ///
+    /// Desktops rotate: a desktop never keeps the image it shows right now, and
+    /// images that are on a desktop already are picked last, so the library
+    /// cycles through the desktops instead of repeating.
+    static func rotateDesktops() {
+        rotateDesktops(library_candidates())
+    }
+
+    private static func rotateDesktops(_ candidates: [endup_wp]) {
+        let stills = candidates.filter {
+            ["jpg", "jpeg", "png"].contains(($0.path as NSString).pathExtension.lowercased())
+        }
+        let spaces = SpaceWallpapers.liveSpaces()
+        guard !stills.isEmpty, !spaces.isEmpty else { return }
+
+        let current = SpaceWallpapers.currentAssignments()
+        let onScreen = Set(current.values)
+        var claimed = Set<String>()
+        var assignment: [SpaceWallpapers.Space: String] = [:]
+
+        for space in spaces {
+            let previous = current[space.uuid]
+            let unused = stills.filter {
+                !onScreen.contains($0.path) && !claimed.contains($0.path) && $0.path != previous
+            }
+            let fresh = stills.filter { !claimed.contains($0.path) && $0.path != previous }
+            let remaining = stills.filter { !claimed.contains($0.path) }
+            let pool = !unused.isEmpty ? unused : (!fresh.isEmpty ? fresh : (!remaining.isEmpty ? remaining : stills))
+            guard let pick = pool.randomElement() else { continue }
+            claimed.insert(pick.path)
+            assignment[space] = pick.path
+        }
+        guard !assignment.isEmpty else { return }
+        guard SpaceWallpapers.assign(assignment) else { return }
+
+        // WallpaperAgent keeps the desktops in memory and only re-reads the
+        // store when it starts or when a desktop is switched to, so it is
+        // restarted here: that is what makes every desktop show its new
+        // wallpaper now instead of only the ones visited next.
+        SpaceWallpapers.reload()
+
+        if let visible = spaces.first(where: { $0.isCurrent }), let path = assignment[visible] {
+            rotationService.mark_current_wallpaper(path)
+        }
     }
 
     func _ap_enabled(_ enabled: Bool) {
@@ -254,6 +346,58 @@ class macpaperService: NSObject, ObservableObject {
             userInfo: ["ap_is_enabled": enabled],
             deliverImmediately: true
         )
+    }
+
+    /// Restores wallpapers after the display layout changed.
+    ///
+    /// A screen that was just plugged in comes online with desktops that have no
+    /// picture of their own, and those fall back to the system default until
+    /// something decorates them: under the per-desktop rotation they are filled
+    /// from the library, otherwise they are handed the picture the other
+    /// desktops already show.
+    static func restoreWallpapersAfterDisplayChange() {
+        // A screen settling in reports the change several times, and every pass
+        // reads and writes the same store, so they are run one after another.
+        displayChangeQueue.async {
+            let spaces = SpaceWallpapers.liveSpaces()
+            guard !spaces.isEmpty else { return }
+
+            let current = SpaceWallpapers.currentAssignments()
+            let missing = spaces.filter { current[$0.uuid] == nil }
+            guard !missing.isEmpty else { return }
+
+            guard UserDefaults.standard.bool(forKey: perSpaceShuffleKey) else {
+                guard let path = UserDefaults.standard.string(forKey: lastShuffleKey) ?? current.values.sorted().first,
+                      FileManager.default.fileExists(atPath: path) else { return }
+                DispatchQueue.main.async { rotationService.set_wp_path(path) }
+                return
+            }
+
+            let stills = library_candidates().filter {
+                ["jpg", "jpeg", "png"].contains(($0.path as NSString).pathExtension.lowercased())
+            }
+            guard !stills.isEmpty else { return }
+
+            var claimed = Set(current.values)
+            var assignment: [SpaceWallpapers.Space: String] = [:]
+            for space in missing {
+                let unclaimed = stills.filter { !claimed.contains($0.path) }
+                guard let pick = (unclaimed.isEmpty ? stills : unclaimed).randomElement() else { continue }
+                claimed.insert(pick.path)
+                assignment[space] = pick.path
+            }
+            guard !assignment.isEmpty, SpaceWallpapers.assign(assignment) else { return }
+            SpaceWallpapers.reload()
+        }
+    }
+
+    private static let displayChangeQueue = DispatchQueue(label: "com.naomisphere.moonleaf.displayChange")
+
+    /// Applies an already chosen picture, without going through the wallpaper
+    /// picker's per-desktop pinning.
+    func set_wp_path(_ path: String) {
+        _exec_wallpaper(["set", path]) { _ in }
+        postOverlayNotification(path: path)
     }
 
     static func load_settings_json() -> [String: String] {
@@ -283,6 +427,8 @@ class macpaperService: NSObject, ObservableObject {
         }
 
         shuffleEnabled = UserDefaults.standard.bool(forKey: "moonleaf_shuffleEnabled")
+
+        perSpaceShuffle = UserDefaults.standard.bool(forKey: "moonleaf_perSpaceShuffle")
 
         if let intervalRaw = UserDefaults.standard.string(forKey: "moonleaf_shuffleInterval"),
            let interval = ShuffleInterval(rawValue: intervalRaw) {
@@ -411,6 +557,12 @@ class macpaperService: NSObject, ObservableObject {
 
         guard isMoving || isStill else { return }
 
+        if isMoving && perSpaceShuffle {
+            // An animated wallpaper is drawn by the overlay engine across every
+            // desktop, so it cannot live next to the per-desktop rotation.
+            setPerSpaceShuffle(false)
+        }
+
         DispatchQueue.main.async { self.selected_wp = wallpaper }
 
         copyWallpaperForScreensaver(wallpaper)
@@ -422,6 +574,7 @@ class macpaperService: NSObject, ObservableObject {
                 _exec_wallpaper(["set", wallpaper.path]) { [weak self] success in
                     guard let self = self else { return }
                     
+                    self.pin_to_current_desktop(wallpaper.path)
                     self.postOverlayNotification(path: wallpaper.path)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         self.current_wp = wallpaper.path
@@ -431,6 +584,7 @@ class macpaperService: NSObject, ObservableObject {
                 }
             } else {
                 
+                self.pin_to_current_desktop(wallpaper.path)
                 self.postOverlayNotification(path: wallpaper.path)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     self.current_wp = wallpaper.path
@@ -461,6 +615,45 @@ class macpaperService: NSObject, ObservableObject {
         )
     }
 
+    /// Records a wallpaper that the rotation loop already applied: screensaver
+    /// copy, overlay notice and the "current" marker the browser shows.
+    private func mark_current_wallpaper(_ path: String) {
+        let wallpaper = endup_wp(
+            id: UUID(),
+            name: (path as NSString).lastPathComponent,
+            path: path,
+            preview: nil,
+            createdDate: Date(),
+            fileSize: 0
+        )
+        copyWallpaperForScreensaver(wallpaper)
+        postOverlayNotification(path: path)
+
+        DispatchQueue.main.async {
+            self.current_wp = path
+            self.screenWallpapers.removeAll()
+            self.saveScreenWallpapers()
+        }
+    }
+
+    /// With the per-desktop rotation on, a wallpaper picked by hand belongs to
+    /// the desktop it was picked on; the other desktops keep their pictures.
+    private func pin_to_current_desktop(_ path: String) {
+        guard perSpaceShuffle else { return }
+        let spaces = SpaceWallpapers.liveSpaces()
+        guard let current = spaces.first(where: { $0.isCurrent }) else { return }
+
+        var wallpaper_of_space = SpaceWallpapers.currentAssignments()
+        wallpaper_of_space[current.uuid] = path
+
+        var assignment: [SpaceWallpapers.Space: String] = [:]
+        for space in spaces {
+            if let wallpaper = wallpaper_of_space[space.uuid] { assignment[space] = wallpaper }
+        }
+        guard !assignment.isEmpty, SpaceWallpapers.assign(assignment) else { return }
+        SpaceWallpapers.reload()
+    }
+
     private func checkIfGlasswpIsRunning() -> Bool {
         let task = Process()
         task.launchPath = "/usr/bin/pgrep"
@@ -478,6 +671,10 @@ class macpaperService: NSObject, ObservableObject {
         let isMoving = ["mov", "mp4", "gif"].contains(ext)
         let isStill = ["jpg", "jpeg", "png"].contains(ext)
         guard isMoving || isStill else { return }
+
+        if isMoving && perSpaceShuffle {
+            setPerSpaceShuffle(false)
+        }
 
         
         if isStill {

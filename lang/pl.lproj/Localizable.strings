@@ -124,6 +124,8 @@
 
 "settings_shuffle" = "Losuj Tapety";
 "settings_shuffle_desc" = "Automatyczna rotacja tapet z Twojej biblioteki";
+"settings_per_desktop_shuffle" = "Inna tapeta na każdym biurku";
+"settings_per_desktop_shuffle_desc" = "Każde biurko dostaje własną tapetę, a biblioteka rotuje bez powtórzeń";
 "settings_shuffle_interval" = "Zmieniaj co";
 "shuffle_interval_15min" = "15 minut";
 "shuffle_interval_1hr" = "1 godzinę";
